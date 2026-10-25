@@ -1,0 +1,176 @@
+*codewhy.txt*  Explain code with an LLM, grounded in your codebase
+
+==============================================================================
+CONTENTS                                                     *codewhy-contents*
+
+  1. Introduction ............................ |codewhy-intro|
+  2. Setup ................................... |codewhy-setup|
+  3. Commands ................................ |codewhy-commands|
+  4. Answer window ........................... |codewhy-window|
+  5. API key ................................. |codewhy-api-key|
+  6. Configuration ........................... |codewhy-config|
+  7. What gets sent .......................... |codewhy-privacy|
+  8. Adding a provider ....................... |codewhy-providers|
+
+==============================================================================
+1. INTRODUCTION                                                 *codewhy-intro*
+
+Select code, press a key, and get an explanation streamed into a floating
+window. codewhy asks your language server for the definitions of the symbols
+in the selection and the places they're used, adds any diagnostics on those
+lines, and sends that context along with the code.
+
+Requires Neovim 0.10+ and curl 7.76+. Run |:checkhealth| codewhy to verify.
+
+==============================================================================
+2. SETUP                                                        *codewhy-setup*
+
+With lazy.nvim: >lua
+    {
+      "bob4202/codewhy.nvim",
+      opts = {},
+    }
+<
+Without a plugin manager, call `require("codewhy").setup({})`.
+
+On first use you're asked to pick a model (free models are listed first) and,
+if no key is configured, to enter your OpenRouter API key, which is saved to
+the system keyring.
+
+==============================================================================
+3. COMMANDS                                                  *codewhy-commands*
+
+                                                                     *:CodeWhy*
+:[range]CodeWhy explain       Explain the selection, range, or current line.
+                              Default mapping: <leader>ce (normal and visual).
+
+:[range]CodeWhy diagnostic    Explain the errors/warnings on these lines and
+                              how to fix them. Default mapping: <leader>cd.
+
+:[range]CodeWhy ask [question]
+                              Ask your own question about the code. Prompts
+                              for the question if none is given.
+                              Default mapping: <leader>ca.
+
+:CodeWhy model [free]         Pick a model from the provider's live list.
+                              The choice is remembered across sessions.
+
+:CodeWhy key [delete]         Save the API key to the system keyring, or
+                              remove it.
+
+==============================================================================
+4. ANSWER WINDOW                                               *codewhy-window*
+
+    q, <Esc>    Close the window (and stop the request if it's running).
+    <C-c>       Stop the request but keep the window.
+    y           Yank the answer to the unnamed and `+` registers.
+    p           Show exactly what was sent to the model. `q` goes back.
+
+                                                               *codewhy-render*
+The answer is rendered as a reading view: headings lose their `#`s and get a
+tinted band, lists get bullets and checkboxes, code blocks are shaded with a
+language label, tables are drawn with box characters and re-aligned, and `---`
+becomes a full-width rule. The buffer text stays plain markdown, so `y` yanks
+markdown. Colors are blended from your colorscheme and follow |:colorscheme|.
+
+Set `ui.render` to `"builtin"` to always use this, or `false` for plain
+markdown. The default, `"auto"`, steps aside if render-markdown.nvim or
+markview.nvim is loaded, since those already render markdown buffers.
+
+Highlight groups, all overridable: CodewhyH1..CodewhyH6, CodewhyH1Bg..
+CodewhyH6Bg, CodewhyCode, CodewhyInlineCode, CodewhyCodeLabel, CodewhyBullet,
+CodewhyUnchecked, CodewhyChecked, CodewhyQuote, CodewhyRule, CodewhyTable,
+CodewhyTableHeader.
+
+==============================================================================
+5. API KEY                                                    *codewhy-api-key*
+
+The key is looked up in this order:
+
+  1. `api_key_cmd`: a list (argv) or a string (run with `sh -c`). The first
+     line of its stdout is used. >lua
+         api_key_cmd = { "pass", "show", "openrouter" }
+         api_key_cmd = "gpg -dq ~/.secrets/openrouter.gpg"
+<
+  2. The environment variable named by `api_key_env` (`OPENROUTER_API_KEY`).
+  3. The system keyring via `secret-tool` (see |:CodeWhy| key).
+
+A plain `api_key = "..."` option is deliberately not supported. The key is
+kept in memory only, never logged, and passed to curl on stdin so it does not
+appear in the process list.
+
+==============================================================================
+6. CONFIGURATION                                               *codewhy-config*
+
+Defaults: >lua
+    require("codewhy").setup({
+      provider = "openrouter",
+      model = nil,
+      api_key_cmd = nil,
+      api_key_env = "OPENROUTER_API_KEY",
+      keymaps = {          -- set any to false to disable
+        explain = "<leader>ce",
+        diagnostic = "<leader>cd",
+        ask = "<leader>ca",
+      },
+      context = {
+        lsp = true,
+        lsp_timeout_ms = 2000,
+        max_symbols = 15,
+        max_snippets = 8,
+        max_snippet_lines = 60,
+        max_references = 5,
+        surrounding_lines = 20,
+        max_chars = 30000,
+        project_only = true,
+        exclude = { "/node_modules/", "/.venv/", "/venv/", "/site-packages/",
+                    "/vendor/", "/.git/", "/.env", ".pem", "/id_rsa",
+                    "/id_ed25519", "/.ssh/" },
+      },
+      ui = {
+        width = 0.6,
+        height = 0.6,
+        border = "rounded",
+        render = "auto",   -- "auto" | "builtin" | false, see |codewhy-render|
+      },
+      providers = {
+        openrouter = {
+          base_url = "https://openrouter.ai/api/v1",
+          temperature = 0.2,
+          max_tokens = nil,
+          timeout = 180,
+        },
+      },
+    })
+<
+`context.exclude` entries are plain substrings of the file path. Setting it
+replaces the default list.
+
+==============================================================================
+7. WHAT GETS SENT                                             *codewhy-privacy*
+
+Only: the selected lines, `surrounding_lines` above and below, diagnostics on
+the selection, the enclosing definitions of symbols used in the selection, and
+a few lines around usages of the main symbol.
+
+With `project_only = true`, files outside the working directory are never
+sent. Symlinks are resolved first, so a link inside the project cannot pull in
+a file from elsewhere. Press `p` in the answer window to see the exact prompt.
+
+==============================================================================
+8. ADDING A PROVIDER                                        *codewhy-providers*
+
+Create `lua/codewhy/providers/<name>.lua` returning a table with:
+
+  stream(req, handlers) -> { cancel = fun() }
+      req      = { model, messages, api_key, options }
+      handlers = { on_chunk(text), on_reasoning(text)?, on_done(),
+                   on_error(msg) }
+
+  list_models(options, cb)
+      cb(models | nil, err | nil), each model being
+      { id, name, free, context_length, prompt_price, completion_price }
+
+Then set `provider = "<name>"` and add its options under `providers.<name>`.
+
+ vim:tw=78:ts=8:ft=help:norl:
