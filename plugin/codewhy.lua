@@ -19,6 +19,24 @@ local subcommands = {
   model = function(_, args)
     require("codewhy").pick_model({ free_only = args[1] == "free" })
   end,
+  toggle = function()
+    require("codewhy").toggle()
+  end,
+  chat = function(_, args)
+    require("codewhy").followup(table.concat(args, " "))
+  end,
+  new = function()
+    require("codewhy").new_chat()
+  end,
+  history = function(_, args)
+    require("codewhy").history(args[1])
+  end,
+  delete = function()
+    require("codewhy").delete_chat()
+  end,
+  stop = function()
+    require("codewhy").stop()
+  end,
 }
 
 vim.api.nvim_create_user_command("CodeWhy", function(cmd)
@@ -36,7 +54,7 @@ end, {
   complete = function(arglead, line)
     local args = vim.split(line, "%s+", { trimempty = true })
     if #args > 2 or (#args == 2 and arglead == "") then
-      return ({ model = { "free" }, key = { "delete" } })[args[2]] or {}
+      return ({ model = { "free" }, key = { "delete" }, history = { "delete", "clear" } })[args[2]] or {}
     end
     return vim.tbl_filter(function(s)
       return s:find(arglead, 1, true) == 1

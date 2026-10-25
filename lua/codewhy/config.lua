@@ -19,6 +19,9 @@ M.defaults = {
     explain = "<leader>ce",
     diagnostic = "<leader>cd",
     ask = "<leader>ca",
+    toggle = "<leader>cc", -- show/hide the chat panel
+    new = "<leader>cn", -- start a new chat
+    history = "<leader>ch", -- reopen a saved chat
   },
 
   context = {
@@ -50,14 +53,29 @@ M.defaults = {
   },
 
   ui = {
-    width = 0.6, -- fraction of editor columns
-    height = 0.6, -- fraction of editor lines
+    -- "panel": a side split you can toggle, like an IDE chat. "float": centered window.
+    layout = "panel",
+    panel = {
+      position = "right", -- or "left"
+      width = 0.35, -- fraction of editor columns, or a column count
+      focus = false, -- move the cursor into the panel when an answer starts
+    },
+    width = 0.6, -- float only: fraction of editor columns
+    height = 0.6, -- float only: fraction of editor lines
     border = "rounded",
     -- Markdown rendering in the answer window:
     --   "auto"    built-in renderer, unless render-markdown.nvim or markview.nvim is loaded
     --   "builtin" always the built-in renderer
     --   false     plain markdown (still syntax highlighted)
     render = "auto",
+  },
+
+  -- Chats are saved (owner-only) under stdpath("data")/codewhy/sessions so they can
+  -- be reopened with :CodeWhy history. They contain the code that was sent.
+  history = {
+    enabled = true,
+    max_sessions = 50,
+    max_chars = 60000, -- older turns are left out of what's sent once a chat gets this long
   },
 
   providers = {

@@ -6,7 +6,7 @@ CONTENTS                                                     *codewhy-contents*
   1. Introduction ............................ |codewhy-intro|
   2. Setup ................................... |codewhy-setup|
   3. Commands ................................ |codewhy-commands|
-  4. Answer window ........................... |codewhy-window|
+  4. Chat panel .............................. |codewhy-panel|
   5. API key ................................. |codewhy-api-key|
   6. Configuration ........................... |codewhy-config|
   7. What gets sent .......................... |codewhy-privacy|
@@ -16,9 +16,10 @@ CONTENTS                                                     *codewhy-contents*
 1. INTRODUCTION                                                 *codewhy-intro*
 
 Select code, press a key, and get an explanation streamed into a floating
-window. codewhy asks your language server for the definitions of the symbols
-in the selection and the places they're used, adds any diagnostics on those
-lines, and sends that context along with the code.
+chat panel beside your code. codewhy asks your language server for the
+definitions of the symbols in the selection and the places they're used, adds
+any diagnostics on those lines, and sends that context along with the code.
+Follow-up questions continue the conversation.
 
 Requires Neovim 0.10+ and curl 7.76+. Run |:checkhealth| codewhy to verify.
 
@@ -48,9 +49,29 @@ the system keyring.
                               how to fix them. Default mapping: <leader>cd.
 
 :[range]CodeWhy ask [question]
-                              Ask your own question about the code. Prompts
-                              for the question if none is given.
+                              Ask your own question about the code. Without
+                              a question, attaches the code to the message
+                              box (shown as @file:lines) for you to type it.
                               Default mapping: <leader>ca.
+
+:CodeWhy toggle               Show or hide the chat panel. After a restart it
+                              reopens the most recent chat.
+                              Default mapping: <leader>cc.
+
+:CodeWhy chat [question]      Send a message in the current chat, or focus
+                              the message box if no question is given.
+
+:CodeWhy new                  Start a new chat. Default mapping: <leader>cn.
+
+:CodeWhy history              Reopen a saved chat. Default mapping: <leader>ch.
+
+:CodeWhy history delete       Pick a saved chat and delete it.
+
+:CodeWhy history clear        Delete every saved chat (asks first).
+
+:CodeWhy delete               Delete the open chat (asks first).
+
+:CodeWhy stop                 Stop the answer being streamed.
 
 :CodeWhy model [free]         Pick a model from the provider's live list.
                               The choice is remembered across sessions.
@@ -59,15 +80,42 @@ the system keyring.
                               remove it.
 
 ==============================================================================
-4. ANSWER WINDOW                                               *codewhy-window*
+4. CHAT PANEL                                                   *codewhy-panel*
 
-    q, <Esc>    Close the window (and stop the request if it's running).
-    <C-c>       Stop the request but keep the window.
-    y           Yank the answer to the unnamed and `+` registers.
-    p           Show exactly what was sent to the model. `q` goes back.
+Answers go to a chat panel, a split on the right by default (`ui.layout =
+"float"` for a centered window instead), with a message box docked under it
+that stays open so you can keep chatting. Each explain/ask adds a turn to the
+current chat, and the whole conversation is sent with every message, so you
+can ask "why?" about the previous answer. Your cursor stays in the code while
+an explanation streams in. Only one answer streams at a time.
+
+In the message box:
+    <CR>        Send. The box clears and stays focused for the next one.
+    <C-j>       New line.
+    <C-x>       Remove the attached code (see |:CodeWhy| ask).
+    <C-c>       Stop the answer.
+
+In the chat area:
+    i, a, <CR>  Jump to the message box.
+    n           New chat.
+    H           Chat history.
+    D           Delete this chat (asks first).
+    y           Yank the last answer to the unnamed and `+` registers.
+    p           Show exactly what was last sent to the model.
+    <C-c>       Stop the answer.
+    q           Hide the panel. The chat, any answer still streaming, and a
+                half-written message are kept.
+
+                                                              *codewhy-history*
+Finished turns are saved to `stdpath("data")/codewhy/sessions/` as JSON, in a
+0700 directory with 0600 files, since they contain the code that was sent.
+The newest `history.max_sessions` are kept. Delete chats with `D` in the
+panel, |:CodeWhy| history delete, or |:CodeWhy| history clear. Long chats are trimmed to the
+newest `history.max_chars` characters when sent. Set `history.enabled = false`
+to keep chats in memory only.
 
                                                                *codewhy-render*
-The answer is rendered as a reading view: headings lose their `#`s and get a
+The chat is rendered as a reading view: headings lose their `#`s and get a
 tinted band, lists get bullets and checkboxes, code blocks are shaded with a
 language label, tables are drawn with box characters and re-aligned, and `---`
 becomes a full-width rule. The buffer text stays plain markdown, so `y` yanks
@@ -112,6 +160,9 @@ Defaults: >lua
         explain = "<leader>ce",
         diagnostic = "<leader>cd",
         ask = "<leader>ca",
+        toggle = "<leader>cc",
+        new = "<leader>cn",
+        history = "<leader>ch",
       },
       context = {
         lsp = true,
@@ -128,11 +179,14 @@ Defaults: >lua
                     "/id_ed25519", "/.ssh/" },
       },
       ui = {
-        width = 0.6,
+        layout = "panel",  -- or "float"
+        panel = { position = "right", width = 0.35, focus = false },
+        width = 0.6,       -- float size
         height = 0.6,
         border = "rounded",
         render = "auto",   -- "auto" | "builtin" | false, see |codewhy-render|
       },
+      history = { enabled = true, max_sessions = 50, max_chars = 60000 },
       providers = {
         openrouter = {
           base_url = "https://openrouter.ai/api/v1",
@@ -149,13 +203,14 @@ replaces the default list.
 ==============================================================================
 7. WHAT GETS SENT                                             *codewhy-privacy*
 
-Only: the selected lines, `surrounding_lines` above and below, diagnostics on
-the selection, the enclosing definitions of symbols used in the selection, and
+Only: formatting instructions (including the panel's width, so answers avoid
+tables and long lines that would wrap), the selected lines,
+`surrounding_lines` above and below, diagnostics on the selection, the enclosing definitions of symbols used in the selection, and
 a few lines around usages of the main symbol.
 
 With `project_only = true`, files outside the working directory are never
 sent. Symlinks are resolved first, so a link inside the project cannot pull in
-a file from elsewhere. Press `p` in the answer window to see the exact prompt.
+a file from elsewhere. Press `p` in the chat panel to see the exact prompt.
 
 ==============================================================================
 8. ADDING A PROVIDER                                        *codewhy-providers*

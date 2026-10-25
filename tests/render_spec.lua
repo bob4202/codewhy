@@ -191,35 +191,45 @@ end)
 
 describe("ui + render", function()
   local ui = require("codewhy.ui")
-  after_each(function()
-    for _, w in ipairs(vim.api.nvim_list_wins()) do
-      if vim.api.nvim_win_get_config(w).relative ~= "" then
-        pcall(vim.api.nvim_win_close, w, true)
-      end
-    end
-  end)
+  local config = require("codewhy.config")
 
-  it("renders streamed markdown in the answer window", function()
-    local win = ui.open({ width = 0.6, height = 0.6, border = "rounded", render = "builtin" }, "t")
-    win:append("# Hel")
-    win:append("lo\n- a")
+  local function setup(render_mode)
+    ui.hide()
+    ui.setup(vim.tbl_extend("force", vim.deepcopy(config.defaults.ui), { render = render_mode }), {})
+    ui.load({})
+  end
+
+  local function count()
+    return #vim.api.nvim_buf_get_extmarks(ui._state.buf, render.ns, 0, -1, {})
+  end
+
+  it("renders streamed markdown in the panel", function()
+    setup("builtin")
+    ui.open()
+    local t = ui.begin_turn("x")
+    t:append("# Hel")
+    t:append("lo\n- a")
     assert.is_true(vim.wait(500, function()
-      return #vim.api.nvim_buf_get_extmarks(win.buf, render.ns, 0, -1, {}) > 0
+      return count() > 0
     end))
-    assert.are.equal("nc", vim.wo[win.win].concealcursor)
+    assert.are.equal("nc", vim.wo[ui._state.win].concealcursor)
   end)
 
   it("does not render when disabled", function()
-    local win = ui.open({ width = 0.6, height = 0.6, border = "rounded", render = false }, "t")
-    win:append("# Hello")
+    setup(false)
+    ui.open()
+    ui.begin_turn("x"):append("# Hello")
     vim.wait(100)
-    assert.are.same({}, vim.api.nvim_buf_get_extmarks(win.buf, render.ns, 0, -1, {}))
+    assert.are.equal(0, count())
   end)
 
   it("auto defers to render-markdown.nvim when it is loaded", function()
+    setup("auto")
     package.loaded["render-markdown"] = {}
-    local win = ui.open({ width = 0.6, height = 0.6, border = "rounded", render = "auto" }, "t")
+    ui.open()
+    ui.begin_turn("x"):append("# Hello")
+    vim.wait(100)
     package.loaded["render-markdown"] = nil
-    assert.is_false(win.render)
+    assert.are.equal(0, count())
   end)
 end)
